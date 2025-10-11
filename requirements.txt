@@ -1,6 +1,6 @@
 runpod
-torch
-diffusers
-transformers
-accelerate
+diffusers==0.26.3
+transformers==4.38.2
+accelerate==0.27.2
 pillow
+huggingface-hub==0.22.2
