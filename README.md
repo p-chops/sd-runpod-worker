@@ -1,2 +1,2 @@
 # sd-runpod-worker
-img2img on runpod
+img2img on runpod using SD
