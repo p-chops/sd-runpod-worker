@@ -1,0 +1,5 @@
+requests
+python-dotenv
+opencv-python
+tqdm
+pillow
