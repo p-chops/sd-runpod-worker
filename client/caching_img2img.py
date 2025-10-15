@@ -13,9 +13,10 @@ if not API_KEY or not ENDPOINT_ID:
     raise ValueError("RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID must be set.")
 
 class CachingImg2ImgClient:
-    def __init__(self, cache_dir):
+    def __init__(self, cache_dir=None):
         self.cache_dir = cache_dir
-        os.makedirs(self.cache_dir, exist_ok=True)
+        if self.cache_dir:
+            os.makedirs(self.cache_dir, exist_ok=True)
 
     def _cache_key(self, image_path, prompt):
         """Generate a cache key: frame_{frame number}_{prompt hash}.png (prompt hash: 8 hex digits)."""
@@ -35,15 +36,17 @@ class CachingImg2ImgClient:
     def get_or_run(self, image_path, prompt, max_retries=3, retry_delay=0.5):
         """
         If cached, return image data from cache. Otherwise, call RunPod API, cache, and return image data.
+        If cache_dir is None, always call RunPod API and do not read/write cache files.
         Retries on error up to max_retries times (default 3) with brief delay.
         Returns: bytes (PNG image data)
         """
         import time
-        cache_path = self._cache_path(image_path, prompt)
-        if os.path.exists(cache_path):
+        cache_enabled = self.cache_dir is not None
+        cache_path = self._cache_path(image_path, prompt) if cache_enabled else None
+        if cache_enabled and os.path.exists(cache_path):
             with open(cache_path, "rb") as f:
                 return f.read()
-        # Not cached: call RunPod API
+        # Not cached or caching disabled: call RunPod API
         with open(image_path, "rb") as f:
             encoded_image = base64.b64encode(f.read()).decode("utf-8")
         payload = {"input": {"image": encoded_image, "prompt": prompt}}
@@ -55,8 +58,9 @@ class CachingImg2ImgClient:
                 response.raise_for_status()
                 result = response.json()
                 output_image_data = base64.b64decode(result['output']['image'])
-                with open(cache_path, "wb") as f:
-                    f.write(output_image_data)
+                if cache_enabled:
+                    with open(cache_path, "wb") as f:
+                        f.write(output_image_data)
                 return output_image_data
             except Exception as e:
                 last_exception = e
