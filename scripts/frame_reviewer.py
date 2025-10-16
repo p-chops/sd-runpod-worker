@@ -3,12 +3,17 @@ import json
 import pygame
 import argparse
 from datetime import datetime
+import csv
+import hashlib
+import shutil  # Import shutil for moving files
 
 class FrameReviewer:
-    def __init__(self, output_dir, marked_file="marked_frames.json"):
+    def __init__(self, output_dir, cache_dir, marked_file="marked_frames.json", scene=None, scenes_csv=None):
         self.output_dir = output_dir
+        self.cache_dir = cache_dir
         self.marked_file = marked_file
-        self.frames = sorted([f for f in os.listdir(output_dir) if f.startswith("frame_") and f.endswith(".png")])
+        self.scene = scene
+        self.frames = self.load_frames(scene, scenes_csv)
         self.current_index = 0
         self.marked_frames = self.load_marked_frames()
 
@@ -28,6 +33,33 @@ class FrameReviewer:
 
         self.run()
 
+    def load_frames(self, scene, scenes_csv):
+        """Load frames for the specified scene from scenes.csv."""
+        if not scene or not scenes_csv:
+            # Load all frames if no scene is specified
+            return sorted([f for f in os.listdir(self.output_dir) if f.startswith("frame_") and f.endswith(".png")])
+
+        # Parse scenes.csv to find the frame range for the specified scene
+        with open(scenes_csv, newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            scenes = {row['name']: (int(row['frame']), None) for row in reader}
+
+        # Update end frame for each scene
+        scene_names = list(scenes.keys())
+        for i, name in enumerate(scene_names[:-1]):
+            scenes[name] = (scenes[name][0], scenes[scene_names[i + 1]][0] - 1)
+        scenes[scene_names[-1]] = (scenes[scene_names[-1]][0], None)  # Last scene goes to the end
+
+        if scene not in scenes:
+            raise ValueError(f"Scene '{scene}' not found in {scenes_csv}.")
+
+        start_frame, end_frame = scenes[scene]
+        end_frame = end_frame or float('inf')  # If no end frame, go to infinity
+        return [
+            f for f in sorted(os.listdir(self.output_dir))
+            if f.startswith("frame_") and f.endswith(".png") and start_frame <= int(f[6:11]) <= end_frame
+        ]
+
     def load_marked_frames(self):
         if os.path.exists(self.marked_file):
             with open(self.marked_file, "r") as f:
@@ -37,6 +69,57 @@ class FrameReviewer:
     def save_marked_frames(self):
         with open(self.marked_file, "w") as f:
             json.dump(self.marked_frames, f, indent=4)
+
+    def compute_checksum(self, file_path):
+        """Compute the SHA256 checksum of a file."""
+        hash_sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+        return hash_sha256.hexdigest()
+
+    def decache_frame(self, frame_number, trash_dir):
+        """Decache a specific frame by moving it to the trash directory and removing it from the output."""
+        output_frame_path = os.path.join(self.output_dir, f"frame_{frame_number:05d}.png")
+        if not os.path.exists(output_frame_path):
+            print(f"Output frame not found: {output_frame_path}")
+            return False
+
+        output_checksum = self.compute_checksum(output_frame_path)
+        cached_files = [
+            f for f in os.listdir(self.cache_dir)
+            if f.startswith(f"frame_{frame_number:05d}_")
+        ]
+
+        for cached_file in cached_files:
+            cached_file_path = os.path.join(self.cache_dir, cached_file)
+            cached_checksum = self.compute_checksum(cached_file_path)
+            if cached_checksum == output_checksum:
+                # Move cached file to the trash directory
+                os.makedirs(trash_dir, exist_ok=True)
+                trash_path = os.path.join(trash_dir, cached_file)
+                shutil.move(cached_file_path, trash_path)
+                print(f"Moved cached file to trash: {trash_path}")
+
+                # Remove the output frame
+                trash_output_path = os.path.join(trash_dir, os.path.basename(output_frame_path))
+                shutil.move(output_frame_path, trash_output_path)
+                print(f"Moved output frame to trash: {trash_output_path}")
+                return True
+        print(f"No matching cached frame found for frame {frame_number}")
+        return False
+
+    def decache_marked_frames(self, trash_dir):
+        """Decache all marked frames in the current scene and exit the application."""
+        filtered_frames = self.get_filtered_frames()
+        for frame_name in filtered_frames:
+            frame_number = int(frame_name[6:11])  # Extract frame number from filename
+            self.decache_frame(frame_number, trash_dir)
+        print("Decached all marked frames in the current scene.")
+        print("Exiting application after decaching.")
+        self.save_marked_frames()
+        pygame.quit()
+        exit(0)  # Exit the application after decaching
 
     def display_frame(self):
         if not self.frames:
@@ -146,6 +229,9 @@ class FrameReviewer:
                         self.next_frame()
                     elif event.key == pygame.K_SPACE:
                         self.toggle_mark()
+                    elif event.key == pygame.K_d:  # Hotkey for decaching marked frames
+                        trash_dir = os.path.join(self.output_dir, "trash")  # Default trash directory
+                        self.decache_marked_frames(trash_dir)
                     elif event.key == pygame.K_ESCAPE:
                         running = False
                 elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -191,14 +277,27 @@ class FrameReviewer:
 def main():
     parser = argparse.ArgumentParser(description="Review and mark frames for decaching.")
     parser.add_argument("output_dir", help="Directory containing output frames.")
+    parser.add_argument("--cache-dir", default=".img2img_cache", help="Directory containing cached frames (default: .img2img_cache).")
     parser.add_argument("--marked-file", default="marked_frames.json", help="File to save marked frames (default: marked_frames.json).")
+    parser.add_argument("--scene", help="Name of the scene to work on (optional).")
+    parser.add_argument("--scenes-csv", default="./scenes.csv", help="Path to scenes.csv file (required if --scene is specified).")
+    parser.add_argument("--trash-dir", default="./trash", help="Directory to move decached files to (default: ./trash).")
     args = parser.parse_args()
 
     if not os.path.isdir(args.output_dir):
         print(f"Error: {args.output_dir} is not a valid directory.")
         return
 
-    FrameReviewer(args.output_dir, args.marked_file)
+    # Ensure the cache directory exists
+    if not os.path.isdir(args.cache_dir):
+        print(f"Error: Cache directory '{args.cache_dir}' does not exist.")
+        return
+
+    if args.scene and not os.path.exists(args.scenes_csv):
+        print(f"Error: scenes.csv file not found at {args.scenes_csv}.")
+        return
+
+    FrameReviewer(args.output_dir, args.cache_dir, args.marked_file, args.scene, args.scenes_csv)
 
 if __name__ == "__main__":
     main()
