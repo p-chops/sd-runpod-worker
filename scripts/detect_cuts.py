@@ -3,6 +3,8 @@ import os
 import json
 import numpy as np
 import re
+import argparse
+import sys
 
 def find_scene_cuts(frames_dir, output_csv_path, threshold=0.8):
     """
@@ -84,16 +86,20 @@ def find_scene_cuts(frames_dir, output_csv_path, threshold=0.8):
 
 # --- HOW TO USE ---
 if __name__ == '__main__':
-    # Define the directory where your frames are stored
-    input_directory = 'input/frames'
-    
-    # Define the path for the output JSON file
-    output_file = 'scenes.csv'
-    
-    # Define the sensitivity threshold. You will need to tune this value.
-    # Start with something around 0.8 and adjust as needed.
-    # Lower value = more sensitive (more cuts detected)
-    # Higher value = less sensitive (fewer cuts detected)
-    cut_threshold = 0.8
+    parser = argparse.ArgumentParser(
+        description='Detect scene cuts by comparing color histograms of consecutive frames.'
+    )
+    parser.add_argument('frames_dir', help='Directory containing frame images (png/jpg/jpeg)')
+    parser.add_argument('output_csv', nargs='?', default='scenes.csv', help="Output CSV path (default: scenes.csv)")
+    parser.add_argument('--threshold', type=float, default=0.8, help='Chi-squared diff threshold for cut detection (default: 0.8)')
+    args = parser.parse_args()
 
-    find_scene_cuts(input_directory, output_file, cut_threshold)
+    if not os.path.isdir(args.frames_dir):
+        print(f"Error: input directory does not exist: {args.frames_dir}", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        find_scene_cuts(args.frames_dir, args.output_csv, args.threshold)
+    except Exception as e:
+        print(f"Error processing frames: {e}", file=sys.stderr)
+        sys.exit(1)
