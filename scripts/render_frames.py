@@ -117,7 +117,7 @@ def build_ffmpeg_cmd(frame_dir: str, pattern: str, start: int, fps: float,
     else:
         raise ValueError(f"Unknown quality preset: {quality}")
 
-    cmd = ["ffmpeg", "-y", "-framerate", str(fps), "-start_number", str(start), "-i", input_pattern]
+    cmd = ["ffmpeg", "-y", "-framerate", str(fps), "-i", input_pattern]
     if audio_file:
         cmd += ["-i", audio_file]
     # map streams: default mapping is okay, but ensure shortest to stop if audio shorter/longer
@@ -173,11 +173,12 @@ def main():
         sys.exit(4)
 
     try:
-        cmd = build_ffmpeg_cmd(frame_dir, pattern, start, fps, audio, output, quality, sharpness)
+        cmd = build_ffmpeg_cmd(frame_dir, pattern, 0, fps, audio, output, quality, sharpness)
     except Exception as e:
         print(f"Error building ffmpeg command: {e}", file=sys.stderr)
         sys.exit(5)
 
+    print(f"Running ffmpeg command: {' '.join(cmd)}")
     rc = run(cmd)
     if rc != 0:
         print(f"ffmpeg exited with code {rc}", file=sys.stderr)
