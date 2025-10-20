@@ -27,10 +27,11 @@ def generate_prompt(csv_data):
     """
     instruction = (
         "Here's a CSV of a prompt schedule, with the prompt column empty--fill it with brief prompts. "
-        "To create a prompt, two things are important: "
-        " 1. ensuring that the description is of a visually striking, stylistically rich scene, and "
-        " 2. exaggerating visual aspects of the description for maximum contrast from scene to scene. "
-        "Do not include markdown, a code or plaintext block, or other text, just return the updated CSV. Double quote the prompt so that you can use commas in it.\n\n"
+        "For each scene, generate a concise, specific, and visually evocative art prompt for an img2img model being applied to a single scene. "
+        "Reference concrete artistic styles (e.g., Baroque, Ukiyo-e, Art Deco), name real artists (e.g., Monet, Vermeer, Kandinsky), "
+        "include historical periods or genres (Victorian, Mughal, cyberpunk, film noir), and make the image striking or surreal. "
+        "Keep the prompt brief (less than one sentence) but vivid and distinct."
+        "Return only the CSV data as plaintext, with no markdown or explanations.\n\n"
         f"{csv_data}"
     )
 
