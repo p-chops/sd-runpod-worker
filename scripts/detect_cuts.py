@@ -78,8 +78,9 @@ def find_scene_cuts(frames_dir, output_csv_path, threshold=0.8):
     
     with open(output_csv_path, 'w') as f:
         f.write("name,frame,prompt\n")
+        f.write('scene0,0,\n')
         for i, cut in enumerate(cuts):
-            f.write(f"scene{i},{cut},\n")
+            f.write(f"scene{i+1},{cut},\n")
 
     print(f"\nDetection complete. Found {len(cuts)} cuts.")
     print(f"Results saved to '{output_csv_path}'")
