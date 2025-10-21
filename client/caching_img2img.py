@@ -6,12 +6,15 @@ import json
 from dotenv import load_dotenv
 
 load_dotenv()
-API_KEY = os.getenv("RUNPOD_API_KEY")
 ENDPOINT_ID = os.getenv("RUNPOD_ENDPOINT_ID")
-API_URL = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync"
+if not ENDPOINT_ID:
+    raise ValueError("RUNPOD_ENDPOINT_ID must be set.")
 
-if not API_KEY or not ENDPOINT_ID:
-    raise ValueError("RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID must be set.")
+API_URL = f"https://{ENDPOINT_ID}.api.runpod.ai/img2img"
+
+API_KEY = os.getenv("RUNPOD_API_KEY")
+if not API_KEY:
+    raise ValueError("RUNPOD_API_KEY must be set.")
 
 class CachingImg2ImgClient:
     PROMPT_HASH_FILE = "prompt_hashes.json"
@@ -68,8 +71,8 @@ class CachingImg2ImgClient:
 
     def get_or_run(self, image_path, prompt, max_retries=3, retry_delay=0.5):
         """
-        If cached, return image data from cache. Otherwise, call RunPod API, cache, and return image data.
-        If cache_dir is None, always call RunPod API and do not read/write cache files.
+        If cached, return image data from cache. Otherwise, call the img2img API, cache, and return image data.
+        If cache_dir is None, always call the API and do not read/write cache files.
         Retries on error up to max_retries times (default 3) with brief delay.
         Returns: bytes (PNG image data)
         """
@@ -79,18 +82,27 @@ class CachingImg2ImgClient:
         if cache_enabled and os.path.exists(cache_path):
             with open(cache_path, "rb") as f:
                 return f.read()
-        # Not cached or caching disabled: call RunPod API
+        # Not cached or caching disabled: call the img2img API
         with open(image_path, "rb") as f:
             encoded_image = base64.b64encode(f.read()).decode("utf-8")
-        payload = {"input": {"image": encoded_image, "prompt": prompt}}
-        headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+        payload = {
+            "image": encoded_image,
+            "prompt": prompt,
+            "num_inference_steps": 25,
+            "strength": 0.5,
+            "guidance_scale": 7.5
+        }
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json"
+        }
         last_exception = None
         for attempt in range(1, max_retries + 1):
             try:
-                response = requests.post(API_URL, headers=headers, json=payload, timeout=300)
+                response = requests.post(API_URL, json=payload, headers=headers, timeout=300)
                 response.raise_for_status()
                 result = response.json()
-                output_image_data = base64.b64decode(result['output']['image'])
+                output_image_data = base64.b64decode(result['image'])
                 if cache_enabled:
                     with open(cache_path, "wb") as f:
                         f.write(output_image_data)
