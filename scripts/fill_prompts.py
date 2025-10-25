@@ -26,13 +26,24 @@ def generate_prompt(csv_data):
         str: The updated CSV data with the 'prompt' column filled in.
     """
     instruction = (
-        "Here's a CSV of a prompt schedule, with the prompt column empty--fill it with brief prompts. "
+        "**Your task**\n\n"
+        "You will be given a CSV file with columns: name, frame, prompt. "
+        "Your task is to produce a new CSV with the prompts in the prompt column replaced with new ones. "
+        "\n\n"
+        "**Prompting guide**\n\n"
+        "\n\n"
         "For each scene, generate a concise, specific, and visually evocative art prompt for an img2img model being applied to a single scene. "
-        "Reference concrete artistic styles (e.g., Baroque, Ukiyo-e, Art Deco), name real artists (e.g., Monet, Vermeer, Kandinsky), "
-        "include historical periods or genres (Victorian, Mughal, cyberpunk, film noir), and make the image striking or surreal. "
+        "Reference concrete artistic styles, name real artists, avoiding the obvious ones, "
+        "include historical periods or genres, and make the image visually striking or with fantasy/surreal elements. "
         "Keep the prompt brief (less than one sentence) but vivid and distinct."
-        "Return only the CSV data as plaintext, with no markdown or explanations.\n\n"
+        "\n\n"
+        "**Input CSV**\n\n"
         f"{csv_data}"
+        "\n\n"
+        "**Output format**\n\n"
+        "Return a CSV with the same columns (name, frame, prompt) and the same rows, but with the prompt column filled in with the newly generated prompts. "
+        "Answer only with the CSV header and rows, with no commentary or markdown."
+        "\n\n"
     )
 
     try:
@@ -64,7 +75,7 @@ def fill_prompts(input_csv, output_csv):
         csv_data = infile.read()
 
     # Generate the updated CSV with prompts
-    updated_csv = generate_prompt(csv_data)
+    updated_csv = generate_prompt(csv_data) + '\n'
 
     # Write the updated CSV to the output file
     with open(output_csv, 'w', encoding='utf-8', newline='') as outfile:
