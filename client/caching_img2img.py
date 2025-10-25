@@ -90,7 +90,7 @@ class CachingImg2ImgClient:
             "prompt": prompt,
             "num_inference_steps": 25,
             "strength": 0.5,
-            "guidance_scale": 7.5
+            "guidance_scale": 2.0
         }
         headers = {
             "Authorization": f"Bearer {API_KEY}",
