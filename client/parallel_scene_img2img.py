@@ -55,7 +55,7 @@ def worker(q, cache_dir, output_dir, start_time, counter, total_frames):
                 eta_str = time.strftime("%H:%M:%S", time.gmtime(int(round(eta_seconds))))
             else:
                 eta_str = "N/A"
-            if latency_ms > 3:
+            if latency_ms > 100:
                 print(f"Wrote {output_path} in {latency_ms:05d} ms | {frame_rate:.2f} fps | {percent_complete:.1f}% complete | ETA: {eta_str}")
         except Exception as e:
             print(f"Error processing {input_path}: {e}")
