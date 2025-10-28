@@ -13,7 +13,7 @@ class FrameReviewer:
         self.cache_dir = cache_dir
         self.marked_file = marked_file
         self.scene = scene
-        self.load_frames(scene, scenes_csv)
+        self.load_frames(scenes_csv)  # Load all frames once
         self.current_index = 0
         self.marked_frames = self.load_marked_frames()
 
@@ -34,8 +34,8 @@ class FrameReviewer:
 
         self.run()
 
-    def load_frames(self, scene, scenes_csv):
-        """Load frames for the specified scene from scenes.csv."""
+    def load_frames(self, scenes_csv):
+        """Load frames for all scenes from scenes.csv."""
         # Parse scenes.csv to find the frame range and prompts for each scene
         scenes = {}
         frame2scene = {}
@@ -48,10 +48,9 @@ class FrameReviewer:
                 scenes[scene_name] = {
                     'start_frame': frame_number,
                     'end_frame': None,  # To be updated later
-                    'prompt': prompt
+                    'prompt': prompt,
+                    'frames': []  # Store frames for this scene
                 }
-
-        self.current_scene = [name for name in scenes][0]
 
         # Update end frame for each scene
         scene_names = list(scenes.keys())
@@ -59,28 +58,22 @@ class FrameReviewer:
             scenes[name]['end_frame'] = scenes[scene_names[i + 1]]['start_frame'] - 1
         scenes[scene_names[-1]]['end_frame'] = None  # Last scene goes to the end
 
-        # Extract the frame range for the specified scene
-        if scene and scene not in scenes:
-            raise ValueError(f"Scene '{scene}' not found in {scenes_csv}.")
+        # Assign frames to each scene
+        all_frames = sorted([f for f in os.listdir(self.output_dir) if f.startswith("frame_") and f.endswith(".png")])
+        for frame_name in all_frames:
+            frame_number = int(frame_name[6:11])  # Extract frame number from filename
+            for scene_name, scene_info in scenes.items():
+                start_frame = scene_info['start_frame']
+                end_frame = scene_info['end_frame'] or float('inf')
+                if start_frame <= frame_number <= end_frame:
+                    scene_info['frames'].append(frame_name)
+                    frame2scene[frame_number] = scene_name
+                    break
 
-        if not scene:
-            # Load all frames if no scene is specified
-            self.frames = sorted([f for f in os.listdir(self.output_dir) if f.startswith("frame_") and f.endswith(".png")])
-        else:
-            start_frame = scenes[scene]['start_frame']
-            end_frame = scenes[scene]['end_frame'] or float('inf')  # If no end frame, go to infinity
-            self.frames = [f for f in sorted(os.listdir(self.output_dir))
-                           if f.startswith("frame_") and f.endswith(".png") and start_frame <= int(f[6:11]) <= end_frame]
-            
-        for s, scene_info in scenes.items():
-            if not scene_info['end_frame']:
-                end_frame_name = self.frames[-1]
-                scene_info['end_frame'] = int(end_frame_name[6:11])
-            for frame_num in range(scene_info['start_frame'], scene_info['end_frame'] + 1):
-                frame2scene[frame_num] = scene_info
-        
         self.scenes = scenes
         self.frame2scene = frame2scene
+        self.scene = scene_names[0] if not self.scene else self.scene  # Default to the first scene if none is specified
+        self.frames = self.scenes[self.scene]['frames']  # Set frames for the current scene
 
     def load_marked_frames(self):
         if os.path.exists(self.marked_file):
@@ -176,7 +169,8 @@ class FrameReviewer:
         frame_number = int(frame_name[6:11])  # Extract the frame number from the filename
 
         # Get the scene name from frame2scene and retrieve the prompt
-        scene_details = self.frame2scene.get(frame_number, None)
+        scene_name = self.frame2scene.get(frame_number, None)
+        scene_details = self.scenes.get(scene_name, None)
         current_prompt = scene_details['prompt'] if scene_details else ""
         prompt_text = self.font.render(f"{current_prompt[:45]}...", True, (255, 255, 255))
         self.screen.blit(prompt_text, (20, screen_height - 80))
@@ -244,7 +238,27 @@ class FrameReviewer:
         elif self.modes[self.current_mode] == "Marked Frames":
             return [f for f in self.frames if f in self.marked_frames]
 
+    def jump_to_scene(self, direction):
+        """Jump to the next or previous scene based on the direction."""
+        scene_names = list(self.scenes.keys())
+        current_scene_index = scene_names.index(self.scene)
+
+        if direction == "next" and current_scene_index < len(scene_names) - 1:
+            self.scene = scene_names[current_scene_index + 1]
+        elif direction == "prev" and current_scene_index > 0:
+            self.scene = scene_names[current_scene_index - 1]
+        else:
+            return  # No scene to jump to
+
+        # Switch to the new scene's frames
+        self.frames = self.scenes[self.scene]['frames']
+        self.current_index = 0  # Reset to the first frame of the new scene
+        print(f"Jumped to scene: {self.scene}")  # Debug: Log the new scene
+
     def run(self):
+        # Enable key repeat for arrow keys
+        pygame.key.set_repeat(666, 50)  # Delay of 666ms, repeat every 50ms
+
         running = True
         while running:
             self.display_frame()
@@ -252,9 +266,10 @@ class FrameReviewer:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_LEFT:
+                    mods = pygame.key.get_mods()
+                    if event.key == pygame.K_LEFT and not (mods & pygame.KMOD_SHIFT):
                         self.prev_frame()
-                    elif event.key == pygame.K_RIGHT:
+                    elif event.key == pygame.K_RIGHT and not (mods & pygame.KMOD_SHIFT):
                         self.next_frame()
                     elif event.key == pygame.K_SPACE:
                         self.toggle_mark()
@@ -263,6 +278,10 @@ class FrameReviewer:
                         self.decache_marked_frames(trash_dir)
                     elif event.key == pygame.K_ESCAPE:
                         running = False
+                    elif event.key == pygame.K_RIGHT and (mods & pygame.KMOD_SHIFT):
+                        self.jump_to_scene("next")
+                    elif event.key == pygame.K_LEFT and (mods & pygame.KMOD_SHIFT):
+                        self.jump_to_scene("prev")
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     print(f"Mouse button clicked at position {event.pos}")  # Debug: Log mouse click position
                     if event.button == 1:  # Left mouse button
