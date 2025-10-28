@@ -13,7 +13,7 @@ class FrameReviewer:
         self.cache_dir = cache_dir
         self.marked_file = marked_file
         self.scene = scene
-        self.frames = self.load_frames(scene, scenes_csv)
+        self.load_frames(scene, scenes_csv)
         self.current_index = 0
         self.marked_frames = self.load_marked_frames()
 
@@ -26,6 +26,7 @@ class FrameReviewer:
         # Dropdown for annotation mode
         self.modes = ["Unmarked Frames", "All Frames", "Marked Frames"]
         self.current_mode = 0  # Default to "Unmarked Frames"
+        self.current_scene = None
 
         # Slider dimensions
         self.slider_rect = pygame.Rect(50, 10, 700, 20)  # Positioned at the top
@@ -35,30 +36,51 @@ class FrameReviewer:
 
     def load_frames(self, scene, scenes_csv):
         """Load frames for the specified scene from scenes.csv."""
-        if not scene or not scenes_csv:
-            # Load all frames if no scene is specified
-            return sorted([f for f in os.listdir(self.output_dir) if f.startswith("frame_") and f.endswith(".png")])
-
-        # Parse scenes.csv to find the frame range for the specified scene
+        # Parse scenes.csv to find the frame range and prompts for each scene
+        scenes = {}
+        frame2scene = {}
         with open(scenes_csv, newline='') as csvfile:
             reader = csv.DictReader(csvfile)
-            scenes = {row['name']: (int(row['frame']), None) for row in reader}
+            for row in reader:
+                scene_name = row['name']
+                frame_number = int(row['frame'])
+                prompt = row.get('prompt', '').strip()  # Handle missing or empty prompts gracefully
+                scenes[scene_name] = {
+                    'start_frame': frame_number,
+                    'end_frame': None,  # To be updated later
+                    'prompt': prompt
+                }
+
+        self.current_scene = [name for name in scenes][0]
 
         # Update end frame for each scene
         scene_names = list(scenes.keys())
         for i, name in enumerate(scene_names[:-1]):
-            scenes[name] = (scenes[name][0], scenes[scene_names[i + 1]][0] - 1)
-        scenes[scene_names[-1]] = (scenes[scene_names[-1]][0], None)  # Last scene goes to the end
+            scenes[name]['end_frame'] = scenes[scene_names[i + 1]]['start_frame'] - 1
+        scenes[scene_names[-1]]['end_frame'] = None  # Last scene goes to the end
 
-        if scene not in scenes:
+        # Extract the frame range for the specified scene
+        if scene and scene not in scenes:
             raise ValueError(f"Scene '{scene}' not found in {scenes_csv}.")
 
-        start_frame, end_frame = scenes[scene]
-        end_frame = end_frame or float('inf')  # If no end frame, go to infinity
-        return [
-            f for f in sorted(os.listdir(self.output_dir))
-            if f.startswith("frame_") and f.endswith(".png") and start_frame <= int(f[6:11]) <= end_frame
-        ]
+        if not scene:
+            # Load all frames if no scene is specified
+            self.frames = sorted([f for f in os.listdir(self.output_dir) if f.startswith("frame_") and f.endswith(".png")])
+        else:
+            start_frame = scenes[scene]['start_frame']
+            end_frame = scenes[scene]['end_frame'] or float('inf')  # If no end frame, go to infinity
+            self.frames = [f for f in sorted(os.listdir(self.output_dir))
+                           if f.startswith("frame_") and f.endswith(".png") and start_frame <= int(f[6:11]) <= end_frame]
+            
+        for s, scene_info in scenes.items():
+            if not scene_info['end_frame']:
+                end_frame_name = self.frames[-1]
+                scene_info['end_frame'] = int(end_frame_name[6:11])
+            for frame_num in range(scene_info['start_frame'], scene_info['end_frame'] + 1):
+                frame2scene[frame_num] = scene_info
+        
+        self.scenes = scenes
+        self.frame2scene = frame2scene
 
     def load_marked_frames(self):
         if os.path.exists(self.marked_file):
@@ -151,6 +173,13 @@ class FrameReviewer:
         marked_status = " [MARKED]" if frame_name in self.marked_frames else ""
         text = self.font.render(f"{frame_name}{marked_status}", True, (255, 255, 255))
         self.screen.blit(text, (20, screen_height - 40))
+        frame_number = int(frame_name[6:11])  # Extract the frame number from the filename
+
+        # Get the scene name from frame2scene and retrieve the prompt
+        scene_details = self.frame2scene.get(frame_number, None)
+        current_prompt = scene_details['prompt'] if scene_details else ""
+        prompt_text = self.font.render(f"{current_prompt[:45]}...", True, (255, 255, 255))
+        self.screen.blit(prompt_text, (20, screen_height - 80))
 
         # Draw the slider and dropdown
         self.draw_slider()
